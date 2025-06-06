@@ -1,51 +1,86 @@
-const socket = io();
+let socket = io("https://video-call-server-g6b9.onrender.com");
+let peerConnections = {}; // <--- Support multiple peers
+let localStream;
 let audioEnabled = true;
 let videoEnabled = true;
 let currentVideoDeviceId = null;
 let availableCameras = [];
+let username;
+let roomName = "";
+let allFriends = [];
 
-
-const config = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
-
+// DOM elements
 const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
+const ringtone = document.getElementById('ringtone');
+const friendsContainer = document.getElementById("friendsContainer");
+const searchInput = document.getElementById("searchInput");
+const remoteVideos = document.getElementById("remoteVideos");
 
+// Login handler
+function login() {
+  username = document.getElementById("usernameInput").value.trim();
+  if (!username) return alert("Enter a username!");
+
+  socket.emit("login", username);
+
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+  document.getElementById("usernameDisplay").textContent = username;
+
+  socket.on("update-user-list", (users) => {
+    allFriends = users.filter(user => user !== username);
+    renderFriends(allFriends);
+  });
+}
+
+function renderFriends(friends) {
+  friendsContainer.innerHTML = "";
+  friends.forEach(user => {
+    const el = document.createElement("div");
+    el.textContent = user;
+    el.className = "friend";
+    el.onclick = () => callUser(user);
+    friendsContainer.appendChild(el);
+  });
+}
+
+function searchFriends() {
+  const term = searchInput.value.toLowerCase();
+  const filtered = allFriends.filter(f => f.toLowerCase().includes(term));
+  renderFriends(filtered);
+}
+
+// Join a room and initialize media
 async function joinRoom() {
-  roomName = document.getElementById('roomInput').value;
+  roomName = document.getElementById("roomInput").value.trim();
   if (!roomName) return alert("Enter a room name.");
 
   const devices = await navigator.mediaDevices.enumerateDevices();
   availableCameras = devices.filter(d => d.kind === 'videoinput');
-  if (availableCameras.length > 0) {
-    currentVideoDeviceId = availableCameras[0].deviceId;
-  }
-    localStream = await navigator.mediaDevices.getUserMedia({
+  currentVideoDeviceId = availableCameras[0]?.deviceId;
+
+  localStream = await navigator.mediaDevices.getUserMedia({
     video: { deviceId: currentVideoDeviceId ? { exact: currentVideoDeviceId } : undefined },
     audio: true
   });
 
-  function toggleMic() {
-    audioEnabled = !audioEnabled;
-    localStream.getAudioTracks().forEach(track => {
-        track.enabled = audioEnabled;
-    });
-    }
-
-    function toggleCamera() {
-        videoEnabled = !videoEnabled;
-        localStream.getVideoTracks().forEach(track => {
-            track.enabled = videoEnabled;
-        });
-        }
-
-
   localVideo.srcObject = localStream;
-
   socket.emit('join', roomName);
 }
 
+// Toggle mic
+function toggleMic() {
+  audioEnabled = !audioEnabled;
+  localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
+}
+
+// Toggle camera
+function toggleCamera() {
+  videoEnabled = !videoEnabled;
+  localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
+}
+
+// Switch between front/rear cameras
 async function switchCamera() {
   if (availableCameras.length < 2) {
     alert("No other camera available.");
@@ -61,85 +96,134 @@ async function switchCamera() {
     audio: true
   });
 
-  // Replace the video track in the peer connection
   const newVideoTrack = newStream.getVideoTracks()[0];
-  const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
-  if (sender) {
-    sender.replaceTrack(newVideoTrack);
+
+  for (const peerId in peerConnections) {
+    const sender = peerConnections[peerId].getSenders().find(s => s.track.kind === 'video');
+    if (sender) sender.replaceTrack(newVideoTrack);
   }
 
-  // Update the local stream and video element
   localStream.getTracks().forEach(track => track.stop());
   localStream = newStream;
   localVideo.srcObject = newStream;
   currentVideoDeviceId = nextDeviceId;
 }
 
+// Hang up
 function hangUp() {
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
+  ringtone.pause();
+  ringtone.currentTime = 0;
+
+  for (const peerId in peerConnections) {
+    peerConnections[peerId].close();
+    document.getElementById(`video-${peerId}`)?.remove();
   }
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-  }
+
+  peerConnections = {};
+
+  if (localStream) localStream.getTracks().forEach(track => track.stop());
   localVideo.srcObject = null;
-  remoteVideo.srcObject = null;
+  remoteVideos.innerHTML = "";
+
   alert("Call ended.");
 }
 
-
-socket.on('new-peer', async (peerId) => {
-  peerConnection = new RTCPeerConnection(config);
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) {
-      socket.emit('ice-candidate', peerId, e.candidate);
-    }
-  };
-
-  peerConnection.ontrack = event => {
-    remoteVideo.srcObject = event.streams[0];
-  };
-
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-  socket.emit('offer', peerId, offer);
-});
-
-socket.on('offer', async (peerId, offer) => {
-  peerConnection = new RTCPeerConnection(config);
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) {
-      socket.emit('ice-candidate', peerId, e.candidate);
-    }
-  };
-
-  peerConnection.ontrack = event => {
-    remoteVideo.srcObject = event.streams[0];
-  };
-
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-  socket.emit('answer', peerId, answer);
-});
-
-socket.on('answer', async (peerId, answer) => {
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('ice-candidate', async (peerId, candidate) => {
-  try {
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (err) {
-    console.error('Error adding ICE candidate:', err);
-  }
-});
-
+// Theme toggle
 function toggleTheme() {
   document.body.classList.toggle('light-theme');
 }
+
+// Call a specific user
+function callUser(targetUser) {
+  ringtone.play().catch(err => console.warn("Auto-play blocked:", err));
+  roomName = `${username}-${targetUser}`;
+  joinRoom().then(() => {
+    socket.emit("join", roomName);
+  });
+}
+
+// Add new remote stream
+function addRemoteStream(stream, peerId) {
+  let existing = document.getElementById(`video-${peerId}`);
+  if (existing) return;
+
+  const video = document.createElement('video');
+  video.id = `video-${peerId}`;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  video.style.width = "48%";
+  video.style.borderRadius = "8px";
+  video.style.backgroundColor = "#111";
+
+  remoteVideos.appendChild(video);
+}
+
+// WebRTC config
+const config = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
+// Handle new peer
+socket.on('new-peer', async (peerId) => {
+  const pc = new RTCPeerConnection(config);
+  peerConnections[peerId] = pc;
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = e => {
+    if (e.candidate) socket.emit('ice-candidate', peerId, e.candidate);
+  };
+
+  pc.ontrack = event => {
+    addRemoteStream(event.streams[0], peerId);
+    ringtone.pause();
+    ringtone.currentTime = 0;
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit('offer', peerId, offer);
+});
+
+// Handle offer
+socket.on('offer', async (peerId, offer) => {
+  ringtone.play().catch(() => {});
+  const pc = new RTCPeerConnection(config);
+  peerConnections[peerId] = pc;
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = e => {
+    if (e.candidate) socket.emit('ice-candidate', peerId, e.candidate);
+  };
+
+  pc.ontrack = event => {
+    addRemoteStream(event.streams[0], peerId);
+    ringtone.pause();
+    ringtone.currentTime = 0;
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('answer', peerId, answer);
+});
+
+// Handle answer
+socket.on('answer', async (peerId, answer) => {
+  const pc = peerConnections[peerId];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+// Handle ICE candidate
+socket.on('ice-candidate', async (peerId, candidate) => {
+  const pc = peerConnections[peerId];
+  if (pc && candidate) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('Error adding ICE candidate:', err);
+    }
+  }
+});
