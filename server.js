@@ -1,39 +1,33 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
+const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = socketIo(server);
 
-app.use(express.static('public'));
+app.use(express.static("public"));
 
-io.on('connection', socket => {
-  console.log('A user connected:', socket.id);
+const users = new Map(); // socket.id → username
 
-  socket.on('join', room => {
-    socket.join(room);
-    const clients = Array.from(io.sockets.adapter.rooms.get(room) || []);
-    const otherClient = clients.find(id => id !== socket.id);
+io.on("connection", (socket) => {
+  console.log("New connection:", socket.id);
 
-    if (otherClient) {
-      socket.to(otherClient).emit('new-peer', socket.id);
-    }
+  socket.on("login", (username) => {
+    users.set(socket.id, username);
+    updateUserList();
   });
 
-  socket.on('offer', (targetId, offer) => {
-    io.to(targetId).emit('offer', socket.id, offer);
+  socket.on("disconnect", () => {
+    users.delete(socket.id);
+    updateUserList();
   });
 
-  socket.on('answer', (targetId, answer) => {
-    io.to(targetId).emit('answer', socket.id, answer);
-  });
-
-  socket.on('ice-candidate', (targetId, candidate) => {
-    io.to(targetId).emit('ice-candidate', socket.id, candidate);
-  });
+  function updateUserList() {
+    const usernames = Array.from(users.values());
+    io.emit("update-user-list", usernames);
+  }
 });
 
-server.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
