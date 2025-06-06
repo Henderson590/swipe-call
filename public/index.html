@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+  <title>WebRTC Video Call</title>
+  <style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: sans-serif;
+    background-color: #000;
+    color: white;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .video-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  #remoteVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background-color: #111;
+  }
+
+  #localVideo {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 250px;
+    height: 170px;
+    object-fit: cover;
+    border: 2px solid white;
+    border-radius: 10px;
+    background-color: #222;
+    box-shadow: 0 0 10px rgba(0,0,0,0.4);
+    }
+
+
+  .controls {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 10px 20px;
+    border-radius: 30px;
+  }
+
+  .controls button {
+    font-size: 24px;
+    background: none;
+    color: white;
+    border: none;
+    cursor: pointer;
+    padding: 10px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: transform 0.2s, background-color 0.2s;
+    }
+
+  .controls button:hover {
+    transform: scale(1.2);
+    background-color: rgba(255, 255, 255, 0.2);
+    }
+
+
+  input#roomInput {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    width: 200px;
+    text-align: center;
+  }
+
+  button[onclick="joinRoom()"] {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  #themeToggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    }
+
+    body.light-theme {
+    background-color: #f0f0f0;
+    color: #111;
+    }
+
+    body.light-theme .controls button {
+    color: #111;
+    background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    body.light-theme .controls button:hover {
+    background-color: rgba(0, 0, 0, 0.15);
+    }
+
+    body.light-theme #themeToggle {
+    color: #111;
+    }
+
+</style>
+
+</head>
+<body>
+  <div class="video-container">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay muted playsinline></video>
+
+    <div class="controls">
+        <button onclick="toggleCamera()" title="Toggle Camera"><i class="fas fa-video"></i></button>
+        <button onclick="toggleMic()" title="Toggle Mic"><i class="fas fa-microphone"></i></button>
+        <button onclick="switchCamera()" title="Switch Camera"><i class="fas fa-sync-alt"></i></button>
+        <button onclick="hangUp()" title="Hang Up"><i class="fas fa-phone-slash"></i></button>
+    </div>
+
+  </div>
+
+  <input id="roomInput" placeholder="Enter Room Name" />
+  <button onclick="joinRoom()">Join</button>
+  <button id="themeToggle" onclick="toggleTheme()">🌓</button>
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
